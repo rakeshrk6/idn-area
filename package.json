@@ -10,12 +10,14 @@
     "url": "https://github.com/fityannugroho/idn-area"
   },
   "scripts": {
+    "prebuild": "npm run prisma:gen",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "prisma:gen": "ts-node -r tsconfig-paths/register --transpile-only prisma/generate.ts",
     "db:migrate": "ts-node -r tsconfig-paths/register --transpile-only prisma/migrate.ts",
     "db:seed": "prisma db seed",
-    "start": "nest start",
+    "prestart": "npm run db:migrate && npm run db:seed",
+    "start": "node dist/src/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/main",
