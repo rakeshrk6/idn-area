@@ -1,4 +1,5 @@
 import { AppController } from '@/app.controller';
+import { TransformedResponse } from '@/common/interceptor/transform.interceptor';
 import { DistrictModule } from '@/district/district.module';
 import { IslandModule } from '@/island/island.module';
 import { ProvinceModule } from '@/province/province.module';
@@ -99,8 +100,27 @@ export class AppTester {
     const res = await this.expectJson(url, method);
 
     expect(res.statusCode).toEqual(200);
+    expect(res.json().statusCode).toEqual(200);
 
     return res;
+  }
+
+  /**
+   * Expect the HTTP response to have status code `200` and the `data` property.
+   *
+   * If the `data` is an array, it also expect the `total` property.
+   */
+  async expectData<T>(url: string, method: HttpMethods = 'GET') {
+    const res = await this.expectOk(url, method);
+    const resJson = res.json<TransformedResponse<T>>();
+
+    expect(resJson.data).toBeDefined();
+
+    if (Array.isArray(resJson.data)) {
+      expect(resJson.meta.total).toEqual(resJson.data.length);
+    }
+
+    return resJson.data;
   }
 
   /**

@@ -1,7 +1,9 @@
 import { getValues, sortArray } from '@/common/utils/array';
+import { getProvinces } from '@/common/utils/data';
+import { SortOrder } from '@/sort/sort.dto';
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import IdnArea, { Province, RegencyTransformed } from 'idn-area-data';
+import { Province } from '@prisma/client';
 import { MockProvinceService } from './__mocks__/province.service';
 import { ProvinceController } from './province.controller';
 import { ProvinceService } from './province.service';
@@ -11,11 +13,9 @@ describe('ProvinceController', () => {
 
   let controller: ProvinceController;
   let provinces: Province[];
-  let regencies: RegencyTransformed[];
 
   beforeAll(async () => {
-    provinces = await IdnArea.provinces({ transform: true });
-    regencies = await IdnArea.regencies({ transform: true });
+    provinces = await getProvinces();
   });
 
   beforeEach(async () => {
@@ -24,7 +24,7 @@ describe('ProvinceController', () => {
       providers: [
         {
           provide: ProvinceService,
-          useValue: new MockProvinceService(provinces, regencies),
+          useValue: new MockProvinceService(provinces),
         },
       ],
     }).compile();
@@ -38,26 +38,27 @@ describe('ProvinceController', () => {
 
   describe('find', () => {
     it('should return all provinces', async () => {
-      const testProvinces = await controller.find();
+      const { data } = await controller.find();
 
-      expect(testProvinces).toEqual(
-        expect.arrayContaining([
+      for (const province of data) {
+        expect(province).toEqual(
           expect.objectContaining({
             code: expect.any(String),
             name: expect.any(String),
           }),
-        ]),
-      );
-      expect(testProvinces).toHaveLength(provinces.length);
+        );
+      }
+
+      expect(data).toHaveLength(provinces.length);
     });
 
     it('should return all provinces sorted by name ascending', async () => {
       const testProvinces = await controller.find({
         sortBy: 'name',
-        sortOrder: 'asc',
+        sortOrder: SortOrder.ASC,
       });
 
-      expect(getValues(testProvinces, 'code')).toEqual(
+      expect(getValues(testProvinces.data, 'code')).toEqual(
         getValues(sortArray(provinces, 'name'), 'code'),
       );
     });
@@ -65,30 +66,30 @@ describe('ProvinceController', () => {
     it('should return all provinces sorted by name descending', async () => {
       const testProvinces = await controller.find({
         sortBy: 'name',
-        sortOrder: 'desc',
+        sortOrder: SortOrder.DESC,
       });
 
-      expect(getValues(testProvinces, 'code')).toEqual(
+      expect(getValues(testProvinces.data, 'code')).toEqual(
         getValues(sortArray(provinces, 'name', 'desc'), 'code'),
       );
     });
 
     it('should return all provinces filtered by name', async () => {
       const testProvName = 'jawa';
-      const testProvinces = await controller.find({
+      const { data } = await controller.find({
         name: testProvName,
       });
 
-      expect(testProvinces).toEqual(
-        expect.arrayContaining([
+      for (const province of data) {
+        expect(province).toEqual(
           expect.objectContaining({
             code: expect.any(String),
             name: expect.stringMatching(new RegExp(testProvName, 'i')),
           }),
-        ]),
-      );
+        );
+      }
 
-      expect(testProvinces.length).toEqual(
+      expect(data.length).toEqual(
         provinces.filter((p) =>
           p.name.toLowerCase().includes(testProvName.toLowerCase()),
         ).length,
@@ -107,61 +108,6 @@ describe('ProvinceController', () => {
     it('should throw NotFoundException if there is no matching province', async () => {
       await expect(controller.findByCode({ code: '00' })).rejects.toThrowError(
         NotFoundException,
-      );
-    });
-  });
-
-  describe('findRegencies', () => {
-    let expectedRegencies: RegencyTransformed[];
-
-    beforeAll(() => {
-      expectedRegencies = regencies.filter(
-        (r) => r.provinceCode === testProvCode,
-      );
-    });
-
-    it('should return all regencies in the matching province', async () => {
-      const testRegencies = await controller.findRegencies({
-        code: testProvCode,
-      });
-
-      expect(testRegencies).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: expect.stringMatching(new RegExp(`^${testProvCode}\\d{2}$`)),
-            name: expect.any(String),
-            provinceCode: testProvCode,
-          }),
-        ]),
-      );
-      expect(testRegencies).toHaveLength(expectedRegencies.length);
-    });
-
-    it('should throw NotFoundException if there is no matching province', async () => {
-      await expect(
-        controller.findRegencies({ code: '00' }),
-      ).rejects.toThrowError(NotFoundException);
-    });
-
-    it('should return all regencies in the matching province sorted by name ascending', async () => {
-      const testRegencies = await controller.findRegencies(
-        { code: testProvCode },
-        { sortBy: 'name', sortOrder: 'asc' },
-      );
-
-      expect(getValues(testRegencies, 'code')).toEqual(
-        getValues(sortArray(expectedRegencies, 'name'), 'code'),
-      );
-    });
-
-    it('should return all regencies in the matching province sorted by name descending', async () => {
-      const testRegencies = await controller.findRegencies(
-        { code: testProvCode },
-        { sortBy: 'name', sortOrder: 'desc' },
-      );
-
-      expect(getValues(testRegencies, 'code')).toEqual(
-        getValues(sortArray(expectedRegencies, 'name', 'desc'), 'code'),
       );
     });
   });

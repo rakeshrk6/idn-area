@@ -1,14 +1,14 @@
-import { CommonService, FindOptions } from '@/common/common.service';
+import { PaginatedReturn } from '@/common/interceptor/paginate.interceptor';
 import { convertCoordinate } from '@/common/utils/coordinate';
 import { getDBProviderFeatures } from '@/common/utils/db';
-import { Island as IslandDTO } from '@/island/island.dto';
+import { Island as IslandDTO, IslandFindQueries } from '@/island/island.dto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SortService } from '@/sort/sort.service';
 import { Injectable } from '@nestjs/common';
 import { Island } from '@prisma/client';
 
 @Injectable()
-export class IslandService implements CommonService<Island> {
+export class IslandService {
   readonly sorter: SortService<Island>;
 
   constructor(private readonly prisma: PrismaService) {
@@ -27,19 +27,30 @@ export class IslandService implements CommonService<Island> {
     return { ...island, latitude, longitude };
   }
 
-  async find({ name, ...sortOptions }: FindOptions<Island> = {}): Promise<
-    Island[]
-  > {
-    return this.prisma.island.findMany({
-      where: {
-        name: {
-          contains: name,
-          ...(getDBProviderFeatures()?.filtering?.insensitive && {
-            mode: 'insensitive',
+  async find(options?: IslandFindQueries): Promise<PaginatedReturn<Island>> {
+    const { page, limit, name, regencyCode, sortBy, sortOrder } = options ?? {};
+
+    return this.prisma.paginator({
+      model: 'Island',
+      paginate: { page, limit },
+      args: {
+        where: {
+          ...(name && {
+            name: {
+              contains: name,
+              ...(getDBProviderFeatures()?.filtering?.insensitive && {
+                mode: 'insensitive',
+              }),
+            },
+          }),
+          ...(typeof regencyCode === 'string' && {
+            regencyCode: regencyCode === '' ? null : regencyCode,
           }),
         },
+        ...((sortBy || sortOrder) && {
+          orderBy: this.sorter.object({ sortBy, sortOrder }),
+        }),
       },
-      orderBy: this.sorter.object(sortOptions),
     });
   }
 

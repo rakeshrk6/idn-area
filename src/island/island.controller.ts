@@ -1,3 +1,4 @@
+import { ApiDataResponse } from '@/common/decorator/api-data-response.decorator';
 import {
   Controller,
   Get,
@@ -8,9 +9,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiNotFoundResponse,
-  ApiOkResponse,
   ApiOperation,
-  ApiParam,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -20,6 +19,8 @@ import {
   IslandFindQueries,
 } from './island.dto';
 import { IslandService } from './island.service';
+import { ApiPaginatedResponse } from '@/common/decorator/api-paginated-response.decorator';
+import { PaginatedReturn } from '@/common/interceptor/paginate.interceptor';
 
 @ApiTags('Island')
 @Controller('islands')
@@ -27,14 +28,7 @@ export class IslandController {
   constructor(private readonly islandService: IslandService) {}
 
   @ApiOperation({
-    description: 'Get the islands by its name.',
-  })
-  @ApiQuery({
-    name: 'name',
-    description: 'The island name.',
-    required: true,
-    type: 'string',
-    example: 'sabang',
+    description: 'Get the islands.',
   })
   @ApiQuery({
     name: 'sortBy',
@@ -43,31 +37,25 @@ export class IslandController {
     type: 'string',
     example: 'code',
   })
-  @ApiQuery({
-    name: 'sortOrder',
-    description: 'Sort islands in ascending or descending order.',
-    required: false,
-    type: 'string',
-    example: 'asc',
+  @ApiPaginatedResponse({
+    model: Island,
+    description: 'Returns array of islands.',
   })
-  @ApiOkResponse({ description: 'Returns array of islands.' })
   @ApiBadRequestResponse({ description: 'If there are invalid query values.' })
   @Get()
-  async find(@Query() queries?: IslandFindQueries): Promise<Island[]> {
-    return (await this.islandService.find(queries)).map((island) =>
+  async find(
+    @Query() queries?: IslandFindQueries,
+  ): Promise<PaginatedReturn<Island>> {
+    const res = await this.islandService.find(queries);
+    const islands = res.data.map((island) =>
       this.islandService.addDecimalCoordinate(island),
     );
+
+    return { ...res, data: islands };
   }
 
   @ApiOperation({ description: 'Get an island by its code.' })
-  @ApiParam({
-    name: 'code',
-    description: 'The island code',
-    required: true,
-    type: 'string',
-    example: '110140001',
-  })
-  @ApiOkResponse({ description: 'Returns an island.' })
+  @ApiDataResponse({ model: Island, description: 'Returns an island.' })
   @ApiBadRequestResponse({ description: 'If the `code` is invalid.' })
   @ApiNotFoundResponse({
     description: 'If no island matches the `code`.',

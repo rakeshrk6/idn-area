@@ -1,11 +1,9 @@
 import { getValues, sortArray } from '@/common/utils/array';
+import { getRegencies } from '@/common/utils/data';
+import { SortOrder } from '@/sort/sort.dto';
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import IdnArea, {
-  DistrictTransformed,
-  IslandTransformed,
-  RegencyTransformed,
-} from 'idn-area-data';
+import { Regency } from '@prisma/client';
 import { MockRegencyService } from './__mocks__/regency.service';
 import { RegencyController } from './regency.controller';
 import { RegencyService } from './regency.service';
@@ -13,15 +11,11 @@ import { RegencyService } from './regency.service';
 describe('RegencyController', () => {
   const testRegencyCode = '1101';
 
-  let regencies: RegencyTransformed[];
-  let districts: DistrictTransformed[];
-  let islands: IslandTransformed[];
+  let regencies: Regency[];
   let controller: RegencyController;
 
   beforeAll(async () => {
-    regencies = await IdnArea.regencies({ transform: true });
-    districts = await IdnArea.districts({ transform: true });
-    islands = await IdnArea.islands({ transform: true });
+    regencies = await getRegencies();
   });
 
   beforeEach(async () => {
@@ -30,7 +24,7 @@ describe('RegencyController', () => {
       providers: [
         {
           provide: RegencyService,
-          useValue: new MockRegencyService(regencies, districts, islands),
+          useValue: new MockRegencyService(regencies),
         },
       ],
     }).compile();
@@ -44,7 +38,7 @@ describe('RegencyController', () => {
 
   describe('find', () => {
     const testRegencyName = 'jakarta';
-    let filteredRegenciesByName: RegencyTransformed[];
+    let filteredRegenciesByName: Regency[];
 
     beforeAll(() => {
       filteredRegenciesByName = regencies.filter((p) =>
@@ -53,66 +47,81 @@ describe('RegencyController', () => {
     });
 
     it('should return all regencies', async () => {
-      const testRegencies = await controller.find();
+      const { data } = await controller.find();
 
-      expect(testRegencies).toEqual(
-        expect.arrayContaining([
+      for (const regency of data) {
+        expect(regency).toEqual(
           expect.objectContaining({
             code: expect.any(String),
             name: expect.any(String),
             provinceCode: expect.any(String),
           }),
-        ]),
-      );
-      expect(testRegencies).toHaveLength(regencies.length);
+        );
+      }
+
+      expect(data).toHaveLength(regencies.length);
     });
 
     it('should return regencies filtered by name', async () => {
-      const testRegencies = await controller.find({
-        name: testRegencyName,
-      });
+      const { data } = await controller.find({ name: testRegencyName });
 
-      expect(testRegencies).toEqual(
-        expect.arrayContaining([
+      for (const regency of data) {
+        expect(regency).toEqual(
           expect.objectContaining({
             code: expect.any(String),
             name: expect.stringMatching(new RegExp(testRegencyName, 'i')),
             provinceCode: expect.any(String),
           }),
-        ]),
-      );
-      expect(testRegencies.length).toEqual(filteredRegenciesByName.length);
+        );
+      }
+
+      expect(data.length).toEqual(filteredRegenciesByName.length);
     });
 
     it('should return empty array if there is no regency with the corresponding name', async () => {
-      const testRegencies = await controller.find({
-        name: 'unknown regency',
-      });
+      const { data } = await controller.find({ name: 'unknown regency' });
 
-      expect(testRegencies).toEqual([]);
+      expect(data).toEqual([]);
     });
 
     it('should return regencies filtered and sorted by name ascending', async () => {
-      const testRegencies = await controller.find({
+      const { data } = await controller.find({
         name: testRegencyName,
         sortBy: 'name',
       });
 
-      expect(getValues(testRegencies, 'code')).toEqual(
+      expect(getValues(data, 'code')).toEqual(
         getValues(sortArray(filteredRegenciesByName, 'name'), 'code'),
       );
     });
 
     it('should return regencies filtered and sorted by name descending', async () => {
-      const testRegencies = await controller.find({
+      const { data } = await controller.find({
         name: testRegencyName,
         sortBy: 'name',
-        sortOrder: 'desc',
+        sortOrder: SortOrder.DESC,
       });
 
-      expect(getValues(testRegencies, 'code')).toEqual(
-        getValues(sortArray(filteredRegenciesByName, 'name', 'desc'), 'code'),
+      expect(getValues(data, 'code')).toEqual(
+        getValues(
+          sortArray(filteredRegenciesByName, 'name', SortOrder.DESC),
+          'code',
+        ),
       );
+    });
+
+    it('should return regencies filtered by province code', async () => {
+      const provinceCode = '11';
+      const filteredRegenciesByProvince = regencies.filter(
+        (p) => p.provinceCode === provinceCode,
+      );
+      const { data } = await controller.find({ provinceCode });
+
+      for (const regency of data) {
+        expect(regency).toEqual(expect.objectContaining({ provinceCode }));
+      }
+
+      expect(data.length).toEqual(filteredRegenciesByProvince.length);
     });
   });
 
@@ -132,147 +141,6 @@ describe('RegencyController', () => {
       await expect(
         controller.findByCode({ code: '0000' }),
       ).rejects.toThrowError(NotFoundException);
-    });
-  });
-
-  describe('findDistricts', () => {
-    let expectedDistricts: DistrictTransformed[];
-
-    beforeAll(() => {
-      expectedDistricts = districts.filter(
-        (r) => r.regencyCode === testRegencyCode,
-      );
-    });
-
-    it('should return all districts in the matching regency', async () => {
-      const testDistricts = await controller.findDistricts({
-        code: testRegencyCode,
-      });
-
-      expect(testDistricts).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: expect.stringMatching(
-              new RegExp(`^${testRegencyCode}\\d{2}$`),
-            ),
-            name: expect.any(String),
-            regencyCode: testRegencyCode,
-          }),
-        ]),
-      );
-      expect(testDistricts).toHaveLength(expectedDistricts.length);
-    });
-
-    it('should throw NotFoundException if there is no matching regency', async () => {
-      await expect(
-        controller.findDistricts({ code: '0000' }),
-      ).rejects.toThrowError(NotFoundException);
-    });
-
-    it('should return all districts in the matching regency sorted by name ascending', async () => {
-      const testDistricts = await controller.findDistricts(
-        { code: testRegencyCode },
-        { sortBy: 'name', sortOrder: 'asc' },
-      );
-
-      expect(getValues(testDistricts, 'code')).toEqual(
-        getValues(sortArray(expectedDistricts, 'name'), 'code'),
-      );
-    });
-
-    it('should return all districts in the matching regency sorted by name descending', async () => {
-      const testDistricts = await controller.findDistricts(
-        { code: testRegencyCode },
-        { sortBy: 'name', sortOrder: 'desc' },
-      );
-
-      expect(getValues(testDistricts, 'code')).toEqual(
-        getValues(sortArray(expectedDistricts, 'name', 'desc'), 'code'),
-      );
-    });
-  });
-
-  describe('findIslands', () => {
-    let expectedIslands: IslandTransformed[];
-
-    beforeAll(() => {
-      expectedIslands = islands.filter(
-        (r) => r.regencyCode === testRegencyCode,
-      );
-    });
-
-    it('should return all islands in the matching regency', async () => {
-      const testIslands = await controller.findIslands({
-        code: testRegencyCode,
-      });
-
-      expect(testIslands).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: expect.stringMatching(
-              new RegExp(`^${testRegencyCode}\\d{5}$`),
-            ),
-            coordinate: expect.any(String),
-            isOutermostSmall: expect.any(Boolean),
-            isPopulated: expect.any(Boolean),
-            latitude: expect.any(Number),
-            longitude: expect.any(Number),
-            name: expect.any(String),
-            regencyCode: testRegencyCode,
-          }),
-        ]),
-      );
-      expect(testIslands).toHaveLength(expectedIslands.length);
-    });
-
-    it('should throw NotFoundException if there is no matching regency', async () => {
-      await expect(
-        controller.findIslands({ code: '0000' }),
-      ).rejects.toThrowError(NotFoundException);
-    });
-
-    it('should return all islands in the matching regency sorted by name ascending', async () => {
-      const testIslands = await controller.findIslands(
-        { code: testRegencyCode },
-        { sortBy: 'name', sortOrder: 'asc' },
-      );
-
-      expect(getValues(testIslands, 'code')).toEqual(
-        getValues(sortArray(expectedIslands, 'name'), 'code'),
-      );
-    });
-
-    it('should return all islands in the matching regency sorted by name descending', async () => {
-      const testIslands = await controller.findIslands(
-        { code: testRegencyCode },
-        { sortBy: 'name', sortOrder: 'desc' },
-      );
-
-      expect(getValues(testIslands, 'code')).toEqual(
-        getValues(sortArray(expectedIslands, 'name', 'desc'), 'code'),
-      );
-    });
-
-    it('should return all islands in the matching regency sorted by coordinate ascending', async () => {
-      const testIslands = await controller.findIslands(
-        { code: testRegencyCode },
-        { sortBy: 'coordinate', sortOrder: 'asc' },
-      );
-
-      expect(getValues(testIslands, 'code')).toEqual(
-        getValues(sortArray(expectedIslands, 'coordinate'), 'code'),
-      );
-    });
-
-    it('should return all islands in the matching regency sorted by coordinate descending', async () => {
-      const testIslands = await controller.findIslands(
-        { code: testRegencyCode },
-        { sortBy: 'coordinate', sortOrder: 'desc' },
-      );
-
-      expect(getValues(testIslands, 'code')).toEqual(
-        getValues(sortArray(expectedIslands, 'coordinate', 'desc'), 'code'),
-      );
     });
   });
 });

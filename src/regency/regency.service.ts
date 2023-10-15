@@ -1,41 +1,45 @@
-import { CommonService, FindOptions } from '@/common/common.service';
+import { PaginatedReturn } from '@/common/interceptor/paginate.interceptor';
 import { getDBProviderFeatures } from '@/common/utils/db';
-import { DistrictService } from '@/district/district.service';
-import { Island as IslandDTO } from '@/island/island.dto';
-import { IslandService } from '@/island/island.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { SortOptions, SortService } from '@/sort/sort.service';
+import { SortService } from '@/sort/sort.service';
 import { Injectable } from '@nestjs/common';
-import { District, Island, Regency } from '@prisma/client';
+import { Regency } from '@prisma/client';
+import { RegencyFindQueries } from './regency.dto';
 
 @Injectable()
-export class RegencyService implements CommonService<Regency> {
+export class RegencyService {
   readonly sorter: SortService<Regency>;
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly districtService: DistrictService,
-    private readonly islandService: IslandService,
-  ) {
+  constructor(private readonly prisma: PrismaService) {
     this.sorter = new SortService<Regency>({
       sortBy: 'code',
       sortOrder: 'asc',
     });
   }
 
-  async find({ name, ...sortOptions }: FindOptions<Regency> = {}): Promise<
-    Regency[]
-  > {
-    return this.prisma.regency.findMany({
-      where: {
-        name: {
-          contains: name,
-          ...(getDBProviderFeatures()?.filtering?.insensitive && {
-            mode: 'insensitive',
+  async find(options?: RegencyFindQueries): Promise<PaginatedReturn<Regency>> {
+    const { name, sortBy, sortOrder, page, limit, provinceCode } =
+      options ?? {};
+
+    return this.prisma.paginator({
+      model: 'Regency',
+      args: {
+        where: {
+          ...(name && {
+            name: {
+              contains: name,
+              ...(getDBProviderFeatures()?.filtering?.insensitive && {
+                mode: 'insensitive',
+              }),
+            },
           }),
+          ...(provinceCode && { provinceCode }),
         },
+        ...((sortBy || sortOrder) && {
+          orderBy: this.sorter.object({ sortBy, sortOrder }),
+        }),
       },
-      orderBy: this.sorter.object(sortOptions),
+      paginate: { page, limit },
     });
   }
 
@@ -45,53 +49,5 @@ export class RegencyService implements CommonService<Regency> {
         code: code,
       },
     });
-  }
-
-  /**
-   * Find all districts in a regency.
-   * @param regencyCode The regency code.
-   * @param sortOptions The sort options.
-   * @returns An array of districts, or `null` if there are no match regency.
-   */
-  async findDistricts(
-    regencyCode: string,
-    sortOptions?: SortOptions<District>,
-  ): Promise<District[] | null> {
-    return this.prisma.regency
-      .findUnique({
-        where: {
-          code: regencyCode,
-        },
-      })
-      .districts({
-        orderBy: this.districtService.sorter.object(sortOptions),
-      });
-  }
-
-  /**
-   * Find all islands in a regency.
-   * @param regencyCode The regency code.
-   * @param sortOptions The sort options.
-   * @returns An array of islands, or `null` if there are no match regency.
-   */
-  async findIslands(
-    regencyCode: string,
-    sortOptions?: SortOptions<Island>,
-  ): Promise<IslandDTO[] | null> {
-    const islands = await this.prisma.regency
-      .findUnique({
-        where: {
-          code: regencyCode,
-        },
-      })
-      .islands({
-        orderBy: this.islandService.sorter.object(sortOptions),
-      });
-
-    if (!islands) {
-      return null;
-    }
-
-    return islands.map(this.islandService.addDecimalCoordinate);
   }
 }
